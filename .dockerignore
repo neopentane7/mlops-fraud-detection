@@ -1,0 +1,27 @@
+.git
+.github
+.venv*
+venv
+**/__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+# Local data, models, and MLflow state are regenerated at build/startup.
+data
+models
+# ...but the serving image bakes these two small artifacts (api/Dockerfile
+# COPYs them); re-include them so they survive the build-context filter.
+!models/*/scaler.pkl
+!models/*/threshold.json
+metrics
+mlruns
+mlartifacts
+*.db
+predictions.jsonl
+monitoring/reports
+docs/images
+.claude
+implementation_history.md
