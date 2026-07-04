@@ -1,11 +1,30 @@
 # Credit-Card Fraud Detection — End-to-End MLOps Pipeline
 
-[![Live demo](https://img.shields.io/badge/Live_demo-Hugging_Face_Spaces-ffab00?logo=huggingface&logoColor=white)](https://huggingface.co/spaces/neopentane7/fraud-detection-demo)
-[![Container image](https://img.shields.io/badge/Image-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/neopentane7/mlops-fraud-detection/pkgs/container/mlops-fraud-detection%2Ffraud-api)
+[![CI](https://github.com/neopentane7/mlops-fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/neopentane7/mlops-fraud-detection/actions/workflows/ci.yml)
+[![Security](https://github.com/neopentane7/mlops-fraud-detection/actions/workflows/security.yml/badge.svg)](https://github.com/neopentane7/mlops-fraud-detection/actions/workflows/security.yml)
+[![Live demo](https://img.shields.io/badge/live_demo-Hugging_Face_Spaces-ffab00?logo=huggingface&logoColor=white)](https://huggingface.co/spaces/neopentane7/fraud-detection-demo)
+[![Container image](https://img.shields.io/badge/image-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/neopentane7/mlops-fraud-detection/pkgs/container/mlops-fraud-detection%2Ffraud-api)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A production-grade, reproducible, and monitored ML system for credit-card fraud
-detection. Every pipeline stage has a **programmatic quality gate that can fail
-the build** — this is deliberately *not* "just train a model in a notebook".
+A **production-grade, reproducible, and monitored** machine-learning system for
+credit-card fraud detection. Every pipeline stage ships a **programmatic quality
+gate that can fail the build** — this is deliberately *not* "just train a model
+in a notebook".
+
+**Highlights**
+
+- **Full MLOps loop:** DVC data pipeline → XGBoost with MLflow tracking &
+  registry → gated CI/CD → FastAPI serving → Evidently drift monitoring →
+  automated retraining on drift.
+- **Dataset-agnostic:** the *same* config-driven pipeline runs on **three real
+  datasets** — card fraud, credit default, and Bitcoin AML.
+- **Shipped, not just coded:** a [live public demo](https://huggingface.co/spaces/neopentane7/fraud-detection-demo)
+  serving the real model, a container image on GHCR, and a manual-approval
+  production release gate.
+- **Honest evaluation:** recall-first thresholding, a temporal-split analysis,
+  and a documented concept-drift failure case — no cherry-picked numbers.
 
 > **🔴 Live demo:** score a transaction in your browser at
 > **[huggingface.co/spaces/neopentane7/fraud-detection-demo](https://huggingface.co/spaces/neopentane7/fraud-detection-demo)**
@@ -18,32 +37,33 @@ data source ─▶ DVC download ─▶ Pandera validate ─▶ preprocess ─▶
             ─▶ FastAPI (Docker) ─▶ Evidently drift monitor ─▶ auto-retrain on drift
 ```
 
-## Visual overview
-
-* **[docs/results.md](docs/results.md)** — consolidated results on **three**
-  organic datasets (card fraud, credit-default, Bitcoin AML): metrics, gates,
-  confusion matrices, literature comparison, and figures.
-* **[docs/elliptic_analysis.md](docs/elliptic_analysis.md)** — Elliptic temporal
-  evaluation reproducing Weber et al. (2019): random vs temporal split, the
-  paper's RF baseline, and the **dark-market-shutdown concept-drift collapse**.
-* **[docs/model_card.md](docs/model_card.md)** — model card: intended use,
-  training data, metrics, ethical considerations, caveats.
-* **[docs/deploy.md](docs/deploy.md)** — deploy a self-contained **live demo**
-  (public Swagger + `/predict`) to Render / Hugging Face Spaces, no secrets: the
-  image trains and bakes in the **real** `creditcard` model at build time.
-* **[docs/scaling.md](docs/scaling.md)** — production & scaling design notes:
-  how the single-node loop would evolve to a high-throughput fraud platform
-  (feature store, streaming, canary deploys, delayed labels, compliance).
-* **[docs/architecture.md](docs/architecture.md)** — Mermaid diagrams: system
-  architecture, DVC DAG, MLflow promotion lifecycle, drift→retrain loop,
-  prediction request flow, CI/CD topology.
-* **[docs/analysis.md](docs/analysis.md)** — charts from the real data: class
-  imbalance, PR/ROC curves, the **threshold trade-off** (recall-first vs
-  max-F1), confusion matrix, feature importance, `scale_pos_weight` sweep, and
-  the single-split **variance** finding. Regenerate with
-  `python scripts/generate_figures.py`.
-
 ![Threshold trade-off](docs/images/threshold_tradeoff.png)
+
+## Contents
+
+- [Why this is more than a notebook](#why-this-is-more-than-a-notebook)
+- [Datasets used for training](#datasets-used-for-training--organic-not-synthetic)
+- [Results (three datasets)](#results--three-datasets-comparable-format-public)
+- [Quick start](#quick-start-windows--powershell)
+- [Repository layout](#repository-layout)
+- [Multi-dataset design](#multi-dataset-config-driven)
+- [Engineering decisions](#engineering-decisions)
+- [CI/CD](#cicd-github-actions)
+- [Testing](#testing)
+- [Limitations & future work](#limitations--future-work)
+- [Documentation](#documentation)
+
+## Documentation
+
+| Document | What's inside |
+| --- | --- |
+| **[results.md](docs/results.md)** | Consolidated results on all three datasets: metrics, gates, cross-dataset comparison charts, confusion matrices, literature comparison. |
+| **[model_card.md](docs/model_card.md)** | Model card — intended use, training data & provenance, metrics, ethical considerations, caveats. |
+| **[elliptic_analysis.md](docs/elliptic_analysis.md)** | Elliptic temporal evaluation reproducing Weber et al. (2019): random vs temporal split and the dark-market-shutdown concept-drift collapse. |
+| **[architecture.md](docs/architecture.md)** | Mermaid diagrams — system architecture, DVC DAG, MLflow promotion lifecycle, drift→retrain loop, request flow, CI/CD topology. |
+| **[analysis.md](docs/analysis.md)** | Charts from the real data — imbalance, PR/ROC, the threshold trade-off, feature importance, `scale_pos_weight` sweep, single-split variance. |
+| **[deploy.md](docs/deploy.md)** | Deploy the self-contained live demo (public Swagger + `/predict`) to Render / Hugging Face Spaces, no secrets. |
+| **[scaling.md](docs/scaling.md)** | Production & scaling design notes — feature store, streaming, canary deploys, delayed labels, compliance. |
 
 ## Why this is more than a notebook
 
@@ -144,7 +164,7 @@ src/models/              train.py (MLflow) · evaluate.py (gates) · predict.py 
 src/monitoring/          detect_drift.py (Evidently)
 api/                     main.py (FastAPI lifespan) · schemas.py · Dockerfile
 scripts/                 promote_model.py · integration_test.py · pre-commit guard
-.github/workflows/       ci.yml · cd.yml · retrain.yml · monitor.yml
+.github/workflows/       7 workflows: ci · quality · e2e · cd · retrain · monitor · security
 dvc.yaml / params.yaml   5-stage pipeline + all tunable parameters
 tests/                   hermetic pytest suite (synthetic fixture, 82% coverage)
 ```
@@ -322,3 +342,7 @@ ruff check src/ tests/ api/
 
 Python 3.11 · DVC · Pandera · XGBoost · scikit-learn · MLflow · SHAP ·
 Evidently · FastAPI · Pydantic v2 · Docker · GitHub Actions · pytest · ruff · mypy
+
+## License
+
+Released under the [MIT License](LICENSE).
