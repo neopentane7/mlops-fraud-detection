@@ -31,6 +31,13 @@ ENV PYTHONPATH=/app
 ENV MLFLOW_TRACKING_URI=http://mlflow:5000
 ENV MODEL_NAME=fraud-detector
 ENV MODEL_STAGE=Production
+# Serve as a non-root user (defense-in-depth against container escape). The only
+# runtime write is the JSONL audit log, pointed at /tmp so it needs no app-dir
+# write access; the model loads from the registry and the baked artifacts are
+# world-readable.
+ENV PREDICTION_LOG_PATH=/tmp/predictions.jsonl
+RUN useradd --system --uid 10001 appuser
+USER appuser
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

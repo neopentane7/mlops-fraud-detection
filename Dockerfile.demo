@@ -32,6 +32,13 @@ RUN python -m src.data.download \
  && python -m src.models.train \
  && rm -rf data/raw data/processed
 
+# Serve as a non-root user (defense-in-depth). The demo resolves the model from
+# the baked local SQLite store, so the user needs ownership of /app (SQLite
+# journaling); the audit log goes to /tmp.
+ENV PREDICTION_LOG_PATH=/tmp/predictions.jsonl
+RUN useradd --system --uid 10001 appuser && chown -R appuser /app
+USER appuser
+
 ENV PORT=7860
 EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
