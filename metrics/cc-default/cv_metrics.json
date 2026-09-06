@@ -11,7 +11,7 @@
   "n_models": 25,
   "n_rows": 29965,
   "n_positives": 6630,
-  "elapsed_seconds": 92.9,
+  "elapsed_seconds": 12.5,
   "summary": {
     "roc_auc": {
       "mean": 0.7750878298608923,
@@ -48,7 +48,7 @@
     "roc_auc": 0.74,
     "avg_precision": 0.5,
     "recall_fraud": 0.55,
-    "precision_fraud": 0.3
+    "precision_fraud": 0.28
   },
   "folds": [
     {

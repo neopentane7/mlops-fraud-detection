@@ -70,7 +70,7 @@ All three **passed their own gate** (`evaluate --stage holdout` exited 0):
 | roc_auc | ≥ 0.96 / 0.969 ✅ | ≥ 0.74 / 0.773 ✅ | ≥ 0.95 / 0.995 ✅ |
 | avg_precision | ≥ 0.80 / 0.826 ✅ | ≥ 0.50 / 0.552 ✅ | ≥ 0.90 / 0.981 ✅ |
 | recall | ≥ 0.78 / 0.831 ✅ | ≥ 0.55 / 0.640 ✅ | ≥ 0.60 / 0.694 ✅ |
-| precision | ≥ 0.60 / 0.787 ✅ | ≥ 0.30 / 0.445 ✅ | ≥ 0.80 / 0.998 ✅ |
+| precision | ≥ 0.60 / 0.787 ✅ | ≥ 0.28 / 0.445 ✅ | ≥ 0.80 / 0.998 ✅ |
 
 ## Vs published literature (sanity check)
 

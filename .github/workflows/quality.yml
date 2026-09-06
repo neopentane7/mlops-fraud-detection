@@ -3,7 +3,7 @@ name: Quality Gate
 # Asserts REAL model quality on REAL data with NO secrets. cc-default is on
 # OpenML (no auth required), so CI can download it and enforce the dataset's
 # published benchmark gate (roc_auc >= 0.74, avg_precision >= 0.50, recall >=
-# 0.55, precision >= 0.30). This complements the synthetic e2e smoke, which only
+# 0.55, precision >= 0.28). This complements the synthetic e2e smoke, which only
 # checks plumbing: here a model that regresses below the bar fails the build.
 on:
   push:

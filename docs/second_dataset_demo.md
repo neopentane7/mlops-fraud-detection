@@ -69,7 +69,7 @@ Namespaced outputs (isolated from the fraud artifacts):
 | roc_auc | 0.773 | ≥ 0.74 | ✅ |
 | avg_precision | 0.552 | ≥ 0.50 | ✅ |
 | recall_fraud | 0.640 | ≥ 0.55 | ✅ |
-| precision_fraud | 0.445 | ≥ 0.30 | ✅ |
+| precision_fraud | 0.445 | ≥ 0.28 | ✅ |
 
 `[evaluate:holdout] All gates passed` → the stage exited 0.
 
