@@ -21,7 +21,7 @@ split (stratified, for cross-dataset comparability).
 | n_estimators / max_depth / lr | 400 / 4 / 0.05 | 400 / 4 / 0.05 | 400 / 4 / 0.05 |
 | `scale_pos_weight` | 24 (tuned) | 3.52 (auto) | 9.2 (auto) |
 | `min_recall` (threshold floor) | 0.85 | 0.65 | 0.65 |
-| chosen decision threshold | 0.170 | 0.472 | 0.996 |
+| chosen decision threshold | 0.170 | 0.476 | 0.996 |
 
 Same code; only the `params.yaml` profile differs.
 
@@ -29,11 +29,11 @@ Same code; only the `params.yaml` profile differs.
 
 | Metric | `creditcard` | `cc-default` | `elliptic` |
 | --- | --- | --- | --- |
-| ROC-AUC | **0.969** | **0.772** | **0.995** |
+| ROC-AUC | **0.969** | **0.773** | **0.995** |
 | Average precision (AUPRC) | **0.826** | **0.552** | **0.981** |
-| Recall (positive) | 0.831 | 0.642 | 0.694 |
-| Precision (positive) | 0.787 | 0.434 | 0.998 |
-| F1 (positive) | 0.808 | 0.518 | 0.818 |
+| Recall (positive) | 0.831 | 0.640 | 0.694 |
+| Precision (positive) | 0.787 | 0.445 | 0.998 |
+| F1 (positive) | 0.808 | 0.525 | 0.818 |
 | Test positives (support) | 71 | 995 | 682 |
 
 > ⚠️ **`elliptic` is graph data evaluated tabularly on a random split** — that's
@@ -67,10 +67,10 @@ All three **passed their own gate** (`evaluate --stage holdout` exited 0):
 
 | Metric | `creditcard` | `cc-default` | `elliptic` |
 | --- | --- | --- | --- |
-| roc_auc | ≥ 0.96 / 0.969 ✅ | ≥ 0.74 / 0.772 ✅ | ≥ 0.95 / 0.995 ✅ |
+| roc_auc | ≥ 0.96 / 0.969 ✅ | ≥ 0.74 / 0.773 ✅ | ≥ 0.95 / 0.995 ✅ |
 | avg_precision | ≥ 0.80 / 0.826 ✅ | ≥ 0.50 / 0.552 ✅ | ≥ 0.90 / 0.981 ✅ |
-| recall | ≥ 0.78 / 0.831 ✅ | ≥ 0.55 / 0.642 ✅ | ≥ 0.60 / 0.694 ✅ |
-| precision | ≥ 0.60 / 0.787 ✅ | ≥ 0.30 / 0.434 ✅ | ≥ 0.80 / 0.998 ✅ |
+| recall | ≥ 0.78 / 0.831 ✅ | ≥ 0.55 / 0.640 ✅ | ≥ 0.60 / 0.694 ✅ |
+| precision | ≥ 0.60 / 0.787 ✅ | ≥ 0.30 / 0.445 ✅ | ≥ 0.80 / 0.998 ✅ |
 
 ## Vs published literature (sanity check)
 
@@ -79,7 +79,7 @@ Threshold-independent metrics (ROC-AUC, AUPRC) land on each dataset's ceiling:
 | | Measured ROC-AUC / AUPRC | Published (GBM) |
 | --- | --- | --- |
 | `creditcard` | 0.969 / 0.826 | ~0.97–0.98 / ~0.85 |
-| `cc-default` | 0.772 / 0.552 | ~0.77–0.78 / ~0.54–0.56 |
+| `cc-default` | 0.773 / 0.552 | ~0.77–0.78 / ~0.54–0.56 |
 | `elliptic` (random) | 0.995 / 0.981 | RF F1 0.787 (paper, *temporal*) |
 
 For `elliptic` the like-for-like comparison is the **temporal** split: temporal

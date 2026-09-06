@@ -49,6 +49,20 @@ jobs:
       - name: Enforce the real benchmark gate (fails the build on regression)
         run: python -m src.models.evaluate --stage holdout
 
+      # Cross-validated gate. The single-split gate above is noisy in proportion
+      # to how rare the positive class is: on the creditcard profile 13 of 25 CV
+      # folds miss a target that the fold *mean* clears (see
+      # metrics/creditcard/cv_metrics.json), because the recall floor can drag a
+      # fold's tuned threshold toward zero and collapse precision. Gating on the
+      # mean removes that failure mode without weakening the bar.
+      #
+      # One seed (5 folds, ~20s on cc-default) keeps PR feedback fast while
+      # still averaging five models instead of trusting one split. The full
+      # 5-seed / 25-model run is what produced the committed artifacts:
+      #   python scripts/cv_evaluate.py --folds 5 --seeds 42,7,21,123,1
+      - name: Enforce the cross-validated gate (fold mean, not a single split)
+        run: python scripts/cv_evaluate.py --folds 5 --seeds 42 --gate
+
       - name: Publish metrics to the run summary
         if: always()
         run: |
@@ -56,5 +70,9 @@ jobs:
             echo "## cc-default quality gate"
             echo '```json'
             cat metrics/cc-default/eval_metrics.json 2>/dev/null || echo "(no metrics)"
+            echo '```'
+            echo "## cross-validated gate (fold mean over 5 folds)"
+            echo '```json'
+            python -c "import json;d=json.load(open('metrics/cc-default/cv_metrics.json'));print(json.dumps({'n_models':d['n_models'],'summary':d['summary']},indent=2))" 2>/dev/null || echo "(no cv metrics)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

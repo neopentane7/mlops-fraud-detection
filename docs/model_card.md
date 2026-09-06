@@ -52,11 +52,11 @@ point.
 
 | Metric | `creditcard` | `cc-default` | `elliptic` |
 | --- | --- | --- | --- |
-| ROC-AUC | 0.969 | 0.772 | 0.995 |
+| ROC-AUC | 0.969 | 0.773 | 0.995 |
 | Average precision (AUPRC) | 0.826 | 0.552 | 0.981 |
-| Recall (positive) | 0.831 | 0.642 | 0.694 |
-| Precision (positive) | 0.787 | 0.434 | 0.998 |
-| F1 (positive) | 0.808 | 0.518 | 0.818 |
+| Recall (positive) | 0.831 | 0.640 | 0.694 |
+| Precision (positive) | 0.787 | 0.445 | 0.998 |
+| F1 (positive) | 0.808 | 0.525 | 0.818 |
 
 These match published GBM baselines (creditcard ≈ 0.97 ROC / 0.85 AUPRC;
 cc-default ≈ 0.77 ROC / 0.55 AUPRC). 5-fold x 5-seed stability on creditcard

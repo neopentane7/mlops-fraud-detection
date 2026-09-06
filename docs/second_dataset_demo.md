@@ -46,14 +46,14 @@ flowchart LR
 | **download** | OpenML 42477 → `data/raw/cc_default.csv`, 30,000×24, positive_rate 0.221 (gate: ≥25k rows ✓) |
 | **validate** | config-built Pandera schema passed: 30,000 rows, 6,636 positives, errors `[]` |
 | **preprocess** | dropped 35 dupes → train 20,975 / val 4,495 / test 4,495 (stratified 22.1%); RobustScaler on **all 23** features, fit on train only |
-| **train** | MLflow run `4f307f1c…`; **`scale_pos_weight` auto = 3.52** (vs fraud's 24); recall-first threshold **0.472** (min_recall override 0.65); SHAP + PR/ROC/confusion + model + threshold.json logged. Promotion gate declined (f1 0.526 < 0.74) — correct: the coarse F1 bar isn't met on this harder problem |
+| **train** | MLflow run `4f307f1c…`; **`scale_pos_weight` auto = 3.52** (vs fraud's 24); recall-first threshold **0.476** (min_recall override 0.65); SHAP + PR/ROC/confusion + model + threshold.json logged. Promotion gate declined (f1 0.528 < 0.74) — correct: the coarse F1 bar isn't met on this harder problem |
 | **evaluate** | reloaded the pyfunc model **from MLflow** (18 artifacts), scored holdout, **benchmark gate PASSED** (exit 0) |
 
 ### MLflow run (evidence)
 
 ```
-params  : n_estimators=400  max_depth=4  scale_pos_weight=3.52  min_recall=0.65  threshold=0.472
-metrics : roc_auc=0.774  avg_precision=0.551  f1=0.526  precision=0.442  recall=0.651
+params  : n_estimators=400  max_depth=4  scale_pos_weight=3.52  min_recall=0.65  threshold=0.476
+metrics : roc_auc=0.774  avg_precision=0.550  f1=0.528  precision=0.444  recall=0.651
 artifacts: shap_summary.png · confusion_matrix.png · pr_curve.png · roc_curve.png
            feature_importance.csv · threshold.json · model/ (pyfunc) · model_native/
 ```
@@ -66,10 +66,10 @@ Namespaced outputs (isolated from the fraud artifacts):
 
 | metric | measured | cc-default target | pass |
 | --- | --- | --- | --- |
-| roc_auc | 0.772 | ≥ 0.74 | ✅ |
+| roc_auc | 0.773 | ≥ 0.74 | ✅ |
 | avg_precision | 0.552 | ≥ 0.50 | ✅ |
-| recall_fraud | 0.642 | ≥ 0.55 | ✅ |
-| precision_fraud | 0.434 | ≥ 0.30 | ✅ |
+| recall_fraud | 0.640 | ≥ 0.55 | ✅ |
+| precision_fraud | 0.445 | ≥ 0.30 | ✅ |
 
 `[evaluate:holdout] All gates passed` → the stage exited 0.
 

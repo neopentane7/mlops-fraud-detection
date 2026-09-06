@@ -105,11 +105,11 @@ per-dataset gates, figures, and the literature comparison are in
 
 | Metric (positive class) | `creditcard` (fraud) | `cc-default` (default) | `elliptic` (AML) |
 | --- | --- | --- | --- |
-| ROC-AUC | **0.969** | **0.772** | **0.995** |
+| ROC-AUC | **0.969** | **0.773** | **0.995** |
 | Average precision (AUPRC) | **0.826** | **0.552** | **0.981** |
-| Recall | 0.831 | 0.642 | 0.694 |
-| Precision | 0.787 | 0.434 | 0.998 |
-| F1 | 0.808 | 0.518 | 0.818 |
+| Recall | 0.831 | 0.640 | 0.694 |
+| Precision | 0.787 | 0.445 | 0.998 |
+| F1 | 0.808 | 0.525 | 0.818 |
 | Test positives (support) | 71 | 995 | 682 |
 | Own benchmark gate | ✅ passed | ✅ passed | ✅ passed |
 

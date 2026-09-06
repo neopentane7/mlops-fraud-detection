@@ -17,6 +17,8 @@ threshold.
 
 from __future__ import annotations
 
+import argparse
+import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -72,6 +74,18 @@ def _metrics(y: np.ndarray, prob: np.ndarray, thr: float) -> dict[str, float]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Elliptic temporal evaluation.")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        help=(
+            "Write the metrics and per-step recall to this JSON path. Without "
+            "it the numbers exist only as terminal output and cannot be traced "
+            "back to a run."
+        ),
+    )
+    args = parser.parse_args()
+
     df, feats = assemble()
     print(
         f"labelled={len(df)} illicit_rate={df['y'].mean():.4f} "
@@ -116,6 +130,7 @@ def main() -> int:
     for k, v in m.items():
         print(f"  {k:10s} {v:.4f}")
 
+    per_step: list[dict[str, float]] = []
     print("\n=== per-time-step recall (test period; dark-market shutdown ~43) ===")
     for step in sorted(test["time_step"].unique()):
         sub = test[test["time_step"] == step]
@@ -124,10 +139,49 @@ def main() -> int:
         pred = (model.predict_proba(sub[feats])[:, 1] >= 0.5).astype(int)
         rec = recall_score(sub["y"], pred, zero_division=0)
         prec = precision_score(sub["y"], pred, zero_division=0)
+        per_step.append(
+            {
+                "time_step": int(step),
+                "n": int(len(sub)),
+                "illicit": int(sub["y"].sum()),
+                "recall": float(rec),
+                "precision": float(prec),
+            }
+        )
         print(
             f"  step {int(step):2d}: n={len(sub):5d} illicit={int(sub['y'].sum()):4d} "
             f"recall={rec:.3f} precision={prec:.3f}"
         )
+
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(
+            json.dumps(
+                {
+                    "protocol": "Weber et al. (2019) temporal split",
+                    "train_max_time_step": TRAIN_MAX_STEP,
+                    "threshold": 0.5,
+                    "n_labelled": int(len(df)),
+                    "n_train": int(len(train)),
+                    "n_test": int(len(test)),
+                    "illicit_rate": float(df["y"].mean()),
+                    "scale_pos_weight": spw,
+                    "hyperparameters": {
+                        "n_estimators": train_cfg.n_estimators,
+                        "max_depth": train_cfg.max_depth,
+                        "learning_rate": train_cfg.learning_rate,
+                        "subsample": train_cfg.subsample,
+                        "colsample_bytree": train_cfg.colsample_bytree,
+                        "random_seed": train_cfg.random_seed,
+                    },
+                    "metrics": m,
+                    "per_time_step": per_step,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        print(f"[temporal] metrics -> {args.out}")
     return 0
 
 
