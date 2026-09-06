@@ -1,7 +1,7 @@
 .PHONY: setup pipeline train serve test lint format clean drift mlflow
 
 setup:
-	pip install -r requirements-dev.txt
+	pip install -e ".[dev]"
 	dvc init --no-scm || true
 	pre-commit install
 
@@ -18,7 +18,7 @@ serve:
 	docker compose up --build
 
 test:
-	pytest tests/ -v --cov=src --cov-report=term-missing
+	pytest tests/ -v --cov=src --cov=api --cov-report=term-missing
 
 lint:
 	ruff check src/ tests/ api/

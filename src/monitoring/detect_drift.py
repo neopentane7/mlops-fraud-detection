@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,20 +39,33 @@ from src.config import (
 _ReportValue: TypeAlias = Any
 
 
+# Fraction of feature columns to shift when simulating drift. This MUST exceed
+# ``monitoring.drift_threshold``, otherwise ``--simulate-drift`` cannot produce a
+# "retrain" decision and the demo silently proves nothing. Previously a fixed 3
+# columns were shifted, which on the 30-feature fraud schema caps the drift share
+# at 3/30 = 0.10 — below the 0.30 retrain threshold, so the trigger never fired.
+DRIFT_SIMULATION_MARGIN = 0.15
+
+
 def simulate_production_traffic(
     test_path: Path = TEST_PATH,
     n_samples: int = 500,
     drift: bool = False,
     random_seed: int = 0,
+    drift_column_share: float = 0.45,
 ) -> pd.DataFrame:
     """Sample production-like traffic from the test set, optionally drifted.
 
     Args:
         test_path: Parquet file to sample from.
         n_samples: Number of rows to draw.
-        drift: If True, inject distribution shift (noise on Amount, shift on V1)
-            to exercise the monitoring pipeline without real traffic.
+        drift: If True, inject distribution shift to exercise the monitoring
+            pipeline without real traffic.
         random_seed: Seed for reproducibility.
+        drift_column_share: Fraction of feature columns to shift when
+            ``drift`` is set. Must exceed ``monitoring.drift_threshold`` for the
+            retrain decision to fire; :func:`main` derives it from the active
+            config so the two can never drift apart.
 
     Returns:
         A feature-only DataFrame of simulated current traffic.
@@ -61,10 +75,11 @@ def simulate_production_traffic(
     sample = frame.sample(n=min(n_samples, len(frame)), random_state=random_seed).copy()
     sample = sample[list(FEATURE_COLUMNS)]
     if drift:
-        # Shift a few leading features to emulate distribution drift. Generic
-        # across dataset profiles (creditcard: Time/Amount/V1; cc-default:
-        # x1/x2/x3) rather than hard-coding column names.
-        for col in list(FEATURE_COLUMNS)[:3]:
+        # Shift the leading N features. Generic across dataset profiles
+        # (creditcard: Time/Amount/V1...; cc-default: x1/x2/x3...) rather than
+        # hard-coding column names.
+        n_shift = max(1, math.ceil(drift_column_share * len(FEATURE_COLUMNS)))
+        for col in list(FEATURE_COLUMNS)[:n_shift]:
             sample[col] = sample[col] + 4.0 + rng.normal(0.0, 1.5, size=len(sample))
     return sample
 
@@ -156,8 +171,14 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config()
+    # Derive the injected drift breadth from the configured retrain threshold so
+    # `--simulate-drift` always clears the bar it is meant to demonstrate.
     current = simulate_production_traffic(
-        n_samples=args.n_samples, drift=args.simulate_drift
+        n_samples=args.n_samples,
+        drift=args.simulate_drift,
+        drift_column_share=min(
+            cfg.monitoring.drift_threshold + DRIFT_SIMULATION_MARGIN, 1.0
+        ),
     )
     current_path = MONITORING_REPORTS_DIR / "current_traffic.parquet"
     MONITORING_REPORTS_DIR.mkdir(parents=True, exist_ok=True)

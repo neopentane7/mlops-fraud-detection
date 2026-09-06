@@ -7,6 +7,7 @@ without a tracking server.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -188,6 +189,98 @@ async def test_scaler_is_applied_before_scoring() -> None:
     assert resp.status_code == 200
     # Raw Amount=25 must have been scaled (median=50, IQR-based) -> not 25.
     assert captured["frame"]["Amount"].iloc[0] != 25.0
+
+
+async def test_degraded_when_threshold_missing() -> None:
+    """A model without a threshold is NOT ready: 503 + degraded, never a 500.
+
+    Regression test: startup used to publish the model to STATE before loading
+    the threshold, so a missing threshold.json left /health reporting "healthy"
+    while /predict raised a 500 comparing a float to None.
+    """
+    main.STATE["threshold"] = None
+    async with _client() as client:
+        health = await client.get("/health")
+        predict = await client.post("/predict", json=_valid_transaction())
+    assert health.json()["status"] == "degraded"
+    assert predict.status_code == 503
+
+
+async def test_request_id_present_on_auth_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even a rejected request carries X-Request-ID (middleware ordering)."""
+    monkeypatch.setenv("API_KEY", "s3cret")
+    async with _client() as client:
+        denied = await client.post("/predict", json=_valid_transaction())
+    assert denied.status_code == 401
+    assert "X-Request-ID" in denied.headers
+
+
+async def test_rate_limit_allows_then_rejects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under-limit requests pass; the next gets 429, still with a request id."""
+    monkeypatch.setenv("RATE_LIMIT_PER_MINUTE", "2")
+    main._RATE_BUCKETS.clear()
+    async with _client() as client:
+        first = await client.post("/predict", json=_valid_transaction())
+        second = await client.post("/predict", json=_valid_transaction())
+        third = await client.post("/predict", json=_valid_transaction())
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+    assert "X-Request-ID" in third.headers
+    main._RATE_BUCKETS.clear()
+
+
+async def test_rate_limit_bucket_map_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expired per-IP buckets are evicted so the map cannot grow without bound."""
+    monkeypatch.setattr(main, "_RATE_BUCKET_MAX_IPS", 5)
+    main._RATE_BUCKETS.clear()
+    # Stale entries: timestamps far outside the window.
+    for i in range(50):
+        main._RATE_BUCKETS[f"10.0.0.{i}"] = [0.0]
+    assert await main._allow_request("192.168.1.1", limit=10) is True
+    assert len(main._RATE_BUCKETS) == 1  # 50 stale IPs swept, only the live one left
+    main._RATE_BUCKETS.clear()
+
+
+async def test_batch_reports_whole_request_latency() -> None:
+    """Batch rows report the request latency, not a fabricated per-row average."""
+    payload = {"transactions": [_valid_transaction() for _ in range(5)]}
+    async with _client() as client:
+        resp = await client.post("/predict/batch", json=payload)
+    body = resp.json()
+    assert body["count"] == 5
+    assert body["latency_ms"] > 0.0
+    # Every row carries the batch latency, and it is NOT total/n.
+    for prediction in body["predictions"]:
+        assert prediction["latency_ms"] == body["latency_ms"]
+
+
+async def test_batch_writes_one_audit_line_per_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The batch audit write is a single append containing every row."""
+    log_path = tmp_path / "audit.jsonl"
+    monkeypatch.setenv("PREDICTION_LOG_PATH", str(log_path))
+
+    payload = {"transactions": [_valid_transaction() for _ in range(4)]}
+    async with _client() as client:
+        resp = await client.post("/predict/batch", json=payload)
+    assert resp.status_code == 200
+
+    lines = [ln for ln in log_path.read_text().splitlines() if ln.strip()]
+    assert len(lines) == 4
+    assert {json.loads(ln)["request_id"].split(":")[-1] for ln in lines} == {
+        "0",
+        "1",
+        "2",
+        "3",
+    }
 
 
 def test_sample_transaction_file_is_valid() -> None:

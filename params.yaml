@@ -96,7 +96,8 @@ preprocess:
   time_column: Time
 
 train:
-  # Values tuned via 5-fold stratified CV on the real (deduplicated) dataset.
+  # Values tuned via 5-fold x 5-seed stratified CV on the real (deduplicated)
+  # dataset; reproduce with scripts/cv_evaluate.py (metrics/<ds>/cv_metrics.json).
   # Shallower trees + more estimators generalise better than the naive
   # 300/depth-6, and a moderate scale_pos_weight (~sqrt of the 577:1 ratio)
   # keeps probabilities better calibrated without losing PR-AUC.

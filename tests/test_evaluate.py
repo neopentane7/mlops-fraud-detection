@@ -55,6 +55,23 @@ def test_check_benchmarks_reports_each_failure() -> None:
     assert any("recall_fraud" in f for f in failures)
 
 
+def test_check_benchmarks_reports_missing_metric_without_crashing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A metric absent from the dict is reported, not formatted into a TypeError.
+
+    Regression test: the guard used to be ``if value is None or value < target``
+    followed by ``f"{value:.4f}"``, so a missing key raised
+    ``TypeError: unsupported format string passed to NoneType.__format__`` —
+    turning a clear gate failure into a stack trace.
+    """
+    monkeypatch.setattr(eval_mod, "BENCHMARK_TARGETS", {"recall_fraud": 0.78})
+    failures = eval_mod.check_benchmarks({"roc_auc": 0.99})  # recall_fraud absent
+    assert len(failures) == 1
+    assert "recall_fraud" in failures[0]
+    assert "missing" in failures[0]
+
+
 def test_load_threshold(tmp_path: Path) -> None:
     """The threshold is read back from threshold.json."""
     path = tmp_path / "threshold.json"

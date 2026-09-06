@@ -8,13 +8,24 @@ CI fast and hermetic while still exercising the real code paths.
 
 from __future__ import annotations
 
-from pathlib import Path
+import os
 
-import numpy as np
-import pandas as pd
-import pytest
+# Pin the dataset profile BEFORE importing src.config, which resolves the active
+# profile once at import time from $MLOPS_DATASET. Without this the suite is not
+# actually hermetic: a developer with MLOPS_DATASET exported (entirely normal
+# when working on cc-default or elliptic — the README tells you to set it) gets
+# spurious failures, because tests assert against the creditcard profile's
+# benchmark targets and its Kaggle/OpenML source settings. Assigned rather than
+# setdefault-ed, so an ambient value cannot leak in.
+os.environ["MLOPS_DATASET"] = "creditcard"
 
-from src.config import FEATURE_COLUMNS, PCA_COLUMNS, TARGET_COLUMN
+from pathlib import Path  # noqa: E402
+
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
+
+from src.config import FEATURE_COLUMNS, PCA_COLUMNS, TARGET_COLUMN  # noqa: E402
 
 N_ROWS = 4000
 FRAUD_RATE = 0.02  # 2% — within the schema's plausible [0.05%, 5%] band, fast to test

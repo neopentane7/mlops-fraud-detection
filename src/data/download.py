@@ -72,8 +72,19 @@ def download_dataset(dest: Path = RAW_DATA_PATH) -> Path:
 
     expected = dest.parent / dest.name
     if not expected.exists():  # Kaggle archive may use a different inner name
-        csvs = list(dest.parent.glob("*.csv"))
+        # Pick the LARGEST csv deterministically. `glob` order is filesystem
+        # dependent, so taking the first match could select a different file on
+        # a different machine (archives often ship a small sample alongside the
+        # real dataset), silently changing what gets trained on.
+        csvs = sorted(
+            dest.parent.glob("*.csv"), key=lambda p: p.stat().st_size, reverse=True
+        )
         if csvs:
+            if len(csvs) > 1:
+                print(
+                    f"[download] archive contained {len(csvs)} CSVs; using the "
+                    f"largest ({csvs[0].name}, {csvs[0].stat().st_size} bytes)"
+                )
             csvs[0].replace(dest)
     _normalize_to_canonical(dest)
     return dest

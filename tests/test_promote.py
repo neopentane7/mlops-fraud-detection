@@ -30,11 +30,21 @@ def _write_eval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, f1: float) -> N
     monkeypatch.setattr(pm, "EVAL_METRICS_PATH", path)
 
 
-def _fake_client_with_prod_f1(prod_f1: float) -> types.SimpleNamespace:
+def _fake_client_with_prod_f1(
+    prod_f1: float, *, holdout: bool = True
+) -> types.SimpleNamespace:
+    """Fake registry client exposing a champion run's metrics.
+
+    ``holdout=True`` mirrors a champion that has been through
+    ``evaluate --stage holdout`` (so its run carries ``holdout_f1_fraud``).
+    ``holdout=False`` mirrors an older run that only has the *validation*
+    ``f1_fraud`` — which must NOT be compared against a holdout score.
+    """
+    key = "holdout_f1_fraud" if holdout else "f1_fraud"
     return types.SimpleNamespace(
         get_model_version=lambda name, v: types.SimpleNamespace(run_id="r1"),
         get_run=lambda rid: types.SimpleNamespace(
-            data=types.SimpleNamespace(metrics={"f1_fraud": prod_f1})
+            data=types.SimpleNamespace(metrics={key: prod_f1})
         ),
     )
 
@@ -88,6 +98,27 @@ def test_keeps_champion_when_not_better(
     _write_eval(tmp_path, monkeypatch, f1=0.71)  # vs champion 0.70 -> +0.01 < 0.02
     monkeypatch.setattr(pm, "_latest_version", lambda stage: "1")
     monkeypatch.setattr(pm, "_client", lambda: _fake_client_with_prod_f1(0.70))
+    promoted = {"called": False}
+    monkeypatch.setattr(
+        pm, "promote_staging_to_production", lambda: promoted.update(called=True) or 0
+    )
+    assert pm.compare_and_promote(0.02) == 0
+    assert promoted["called"] is False
+
+
+def test_refuses_to_compare_against_validation_only_champion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A champion with no holdout metric must not be compared against.
+
+    Its bare ``f1_fraud`` is a *validation* score; comparing a holdout number
+    against it would silently mix splits. The gate keeps Production instead.
+    """
+    _write_eval(tmp_path, monkeypatch, f1=0.90)  # would easily "win" vs 0.70
+    monkeypatch.setattr(pm, "_latest_version", lambda stage: "1")
+    monkeypatch.setattr(
+        pm, "_client", lambda: _fake_client_with_prod_f1(0.70, holdout=False)
+    )
     promoted = {"called": False}
     monkeypatch.setattr(
         pm, "promote_staging_to_production", lambda: promoted.update(called=True) or 0

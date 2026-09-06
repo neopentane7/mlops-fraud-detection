@@ -72,23 +72,28 @@ class TransactionFeatures(BaseModel):
         return value
 
 
-class FeatureContribution(BaseModel):
-    """A single SHAP feature contribution for explainability."""
-
-    feature: str
-    shap_value: float
-
-
 class PredictionResponse(BaseModel):
-    """Scoring result for one transaction."""
+    """Scoring result for one transaction.
+
+    Note: there is deliberately no SHAP/``top_features`` field. The serving
+    image excludes the training stack (``shap`` is not a serving dependency), so
+    per-request explanations are not computed. SHAP summaries are logged as
+    MLflow artifacts at training time instead. The field previously declared
+    here was always ``None``.
+    """
 
     fraud_probability: float = Field(..., ge=0, le=1)
     is_fraud: bool
     threshold_used: float
     model_version: str
-    latency_ms: float
-    top_features: list[FeatureContribution] | None = Field(
-        default=None, description="Top SHAP contributors (only for high-risk scores)"
+    latency_ms: float = Field(
+        ...,
+        description=(
+            "Server-side scoring latency for the request that produced this "
+            "prediction. In a batch every row reports the whole-request "
+            "latency — the batch is scored in one vectorised call, so there is "
+            "no per-row measurement."
+        ),
     )
 
 
@@ -103,6 +108,9 @@ class BatchPredictionResponse(BaseModel):
 
     predictions: list[PredictionResponse]
     count: int
+    latency_ms: float = Field(
+        ..., description="Total server-side latency for scoring the whole batch"
+    )
 
 
 class HealthResponse(BaseModel):

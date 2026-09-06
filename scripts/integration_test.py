@@ -52,10 +52,21 @@ def check_prediction() -> None:
     payload = json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
     body = _post(f"{BASE_URL}/predict", payload)
     print(f"[integration] /predict -> {body}")
-    prob = body["fraud_probability"]
-    assert isinstance(prob, (int, float)) and 0.0 <= prob <= 1.0, "bad probability"
-    assert isinstance(body["is_fraud"], bool), "missing is_fraud"
-    assert "model_version" in body, "missing model_version"
+
+    # Explicit raises, not `assert`: this gates a CD promotion, and asserts are
+    # stripped under `python -O`, which would turn the whole check into a no-op.
+    def _require(condition: bool, message: str) -> None:
+        if not condition:
+            raise SystemExit(f"[integration] FAILED: {message} (got {body!r})")
+
+    prob = body.get("fraud_probability")
+    _require(
+        isinstance(prob, int | float) and not isinstance(prob, bool),
+        "fraud_probability is not numeric",
+    )
+    _require(0.0 <= float(prob) <= 1.0, "fraud_probability outside [0, 1]")
+    _require(isinstance(body.get("is_fraud"), bool), "is_fraud missing or not a bool")
+    _require("model_version" in body, "model_version missing")
 
 
 def main() -> int:

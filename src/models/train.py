@@ -124,18 +124,35 @@ def _cost_optimal_threshold(
     The business framing of fraud's asymmetric errors: a missed fraud usually
     costs far more than a false alarm, so the optimal cut-off is wherever the
     marginal fraud caught stops being worth the false positives it adds.
+
+    Computed in O(n log n) via a single descending sort plus cumulative sums.
+    The obvious implementation — loop over every unique score, re-scanning the
+    full array each time — is O(n^2) and does not finish on a realistically
+    sized validation split (~42k rows here).
     """
-    candidates = np.unique(probs)
-    pos = y == 1
-    best_t, best_cost = 0.5, float("inf")
-    for t in candidates:
-        pred = probs >= t
-        fn = int((pos & ~pred).sum())
-        fp = int((~pos & pred).sum())
-        cost = cost_fn * fn + cost_fp * fp
-        if cost < best_cost:
-            best_cost, best_t = cost, float(t)
-    return best_t
+    scores = np.asarray(probs, dtype=float)
+    labels = np.asarray(y).astype(int)
+    if scores.size == 0:
+        return 0.5
+
+    order = np.argsort(-scores, kind="stable")
+    sorted_scores = scores[order]
+    sorted_labels = labels[order]
+
+    # Cutting at index i means predicting positive for rows 0..i, so the running
+    # sums give TP/FP directly and FN is whatever positives are left behind.
+    tp = np.cumsum(sorted_labels)
+    fp = np.cumsum(1 - sorted_labels)
+    cost = cost_fn * (int(sorted_labels.sum()) - tp) + cost_fp * fp
+
+    # Only cut where the score actually changes: rows 0..i are exactly
+    # {score >= sorted_scores[i]} when sorted_scores[i] != sorted_scores[i + 1].
+    boundary = np.flatnonzero(np.append(np.diff(sorted_scores) != 0, True))
+    boundary_costs = cost[boundary]
+    # Ties resolve to the SMALLEST qualifying threshold — the largest index in
+    # descending order — matching the original ascending scan's behaviour.
+    best = boundary[np.flatnonzero(boundary_costs == boundary_costs.min())[-1]]
+    return float(sorted_scores[best])
 
 
 def find_optimal_threshold(
@@ -264,9 +281,16 @@ def log_plots(
     y_val: pd.Series,
     threshold: float,
     artifact_dir: Path,
+    probs: np.ndarray,
 ) -> None:
-    """Generate all diagnostic plots into ``artifact_dir`` and log them."""
-    probs = model.predict_proba(x_val)[:, 1]
+    """Generate all diagnostic plots into ``artifact_dir`` and log them.
+
+    ``probs`` must be the SAME scores the threshold was selected from and the
+    metrics were computed on. Recomputing raw ``predict_proba`` here instead
+    would silently mismatch whenever calibration is enabled: the operating point
+    is in calibrated space, so plotting it over an uncalibrated curve puts the
+    marker — and the confusion matrix — at the wrong place.
+    """
     y_pred = classify(probs, threshold)
 
     cm_path = artifact_dir / "confusion_matrix.png"
@@ -418,7 +442,7 @@ def train(cfg: Config) -> str:
         mlflow.log_param("threshold", threshold)
         mlflow.log_metrics({k: v for k, v in metrics.items() if k != "threshold"})
 
-        log_plots(model, x_val, y_val, threshold, artifact_dir)
+        log_plots(model, x_val, y_val, threshold, artifact_dir, probs)
         _log_feature_importance(model, artifact_dir)
         _log_models(model, artifact_dir, calibrator_path)
         _persist_outputs(run_id, threshold)

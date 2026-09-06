@@ -11,7 +11,10 @@ on:
         default: false
 
 permissions:
-  contents: read
+  # `contents: write` is required by repos.createDispatchEvent below, which
+  # fires the drift-triggered retrain. With `contents: read` that call 403s,
+  # so the whole drift -> retrain loop silently never fires.
+  contents: write
 
 jobs:
   drift:

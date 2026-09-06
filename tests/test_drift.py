@@ -13,6 +13,7 @@ from src.config import (
     TrainConfig,
 )
 from src.monitoring.detect_drift import (
+    DRIFT_SIMULATION_MARGIN,
     generate_drift_report,
     make_retrain_decision,
     simulate_production_traffic,
@@ -48,6 +49,34 @@ def test_simulate_drift_shifts_distribution(processed_data: dict[str, Path]) -> 
         processed_data["test"], n_samples=100, drift=True
     )
     assert drifted["V1"].mean() > base["V1"].mean() + 2.0
+
+
+def test_simulated_drift_spans_enough_columns_to_trigger_retrain(
+    processed_data: dict[str, Path],
+) -> None:
+    """Injected drift must span a larger share of columns than the gate needs.
+
+    Regression test: the simulator used to shift a fixed 3 columns, which on the
+    30-feature schema caps the drift share at 3/30 = 0.10 — below the 0.30
+    retrain threshold. `--simulate-drift`, whose entire purpose is to
+    demonstrate the retrain trigger, could therefore never fire it.
+    """
+    threshold = 0.30
+    base = simulate_production_traffic(
+        processed_data["test"], n_samples=200, drift=False
+    )
+    drifted = simulate_production_traffic(
+        processed_data["test"],
+        n_samples=200,
+        drift=True,
+        drift_column_share=threshold + DRIFT_SIMULATION_MARGIN,
+    )
+    moved = [
+        c
+        for c in FEATURE_COLUMNS
+        if abs(float(drifted[c].mean()) - float(base[c].mean())) > 2.0
+    ]
+    assert len(moved) / len(FEATURE_COLUMNS) > threshold
 
 
 def test_make_retrain_decision() -> None:

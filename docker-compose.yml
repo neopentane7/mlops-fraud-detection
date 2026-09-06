@@ -10,13 +10,16 @@ services:
       - "127.0.0.1:5000:5000"
     volumes:
       - ./mlruns:/mlruns
-      - ./mlflow.db:/mlflow.db
+      # Mount a DIRECTORY, not the .db file. Bind-mounting a file that does not
+      # exist yet makes Docker create a directory in its place, after which the
+      # tracking server fails to open its backend store.
+      - ./mlflow-data:/mlflow
     # --serve-artifacts proxies model artifacts over HTTP so the api container
     # (which only talks to the tracking server, not the artifact store) can load
     # models:/.../Production without sharing a filesystem path.
     command: >
       mlflow server
-      --backend-store-uri sqlite:///mlflow.db
+      --backend-store-uri sqlite:////mlflow/mlflow.db
       --artifacts-destination /mlruns
       --serve-artifacts
       --host 0.0.0.0

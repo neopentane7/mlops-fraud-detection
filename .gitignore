@@ -9,6 +9,7 @@ __pycache__/
 .coverage
 htmlcov/
 .venv/
+.venv-*/
 venv/
 env/
 
@@ -30,10 +31,15 @@ kaggle.json
 mlruns/
 mlflow*.db
 mlartifacts/
+mlflow-data/
 
-# Generated reports / metrics artifacts
-monitoring/reports/*.html
-monitoring/reports/*.json
+# Generated reports / metrics artifacts. Patterns are recursive: outputs are
+# namespaced per dataset (monitoring/reports/<dataset>/...), so a top-level-only
+# glob would leave generated smoke artifacts committable.
+monitoring/reports/**/*.html
+monitoring/reports/**/*.json
+monitoring/reports/**/*.parquet
+metrics/e2e/
 predictions.jsonl
 
 # OS / editor
@@ -48,3 +54,4 @@ Thumbs.db
 # Personal/working docs — kept locally, excluded from the public repo
 implementation_history.md
 docs/concepts.md
+INTERVIEW_BRIEF.md

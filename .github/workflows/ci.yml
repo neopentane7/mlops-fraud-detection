@@ -42,8 +42,8 @@ jobs:
       - name: Type-check (mypy)
         run: mypy src/ api/
 
-      - name: Run tests with coverage gate (>= 80%)
-        run: pytest tests/ -v --cov=src --cov-report=xml --cov-fail-under=80
+      - name: Run tests with coverage gate (>= 80%, src + api)
+        run: pytest tests/ -v --cov=src --cov=api --cov-report=xml --cov-fail-under=80
 
       - name: Validate DVC pipeline definition
         run: dvc dag --mermaid   # dvc is in the pinned lock

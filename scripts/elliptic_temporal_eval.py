@@ -32,6 +32,8 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from src.config import load_config
+
 TRAIN_MAX_STEP = 34  # paper: train steps 1-34, test 35-49
 KAGGLE_DATASET = "ellipticco/elliptic-data-set"
 
@@ -84,10 +86,27 @@ def main() -> int:
     )
 
     spw = float((train["y"] == 0).sum() / max((train["y"] == 1).sum(), 1))
+    # Hyperparameters come from params.yaml, not a second hardcoded copy: a
+    # duplicated literal here would silently drift from the pipeline it claims
+    # to reproduce, making the published temporal numbers incomparable.
+    train_cfg = load_config().train
     model = xgb.XGBClassifier(
-        n_estimators=400, max_depth=4, learning_rate=0.05, scale_pos_weight=spw,
-        subsample=0.8, colsample_bytree=0.8, eval_metric="aucpr",
-        tree_method="hist", n_jobs=-1, random_state=42,
+        n_estimators=train_cfg.n_estimators,
+        max_depth=train_cfg.max_depth,
+        learning_rate=train_cfg.learning_rate,
+        scale_pos_weight=spw,  # computed from the temporal train split
+        subsample=train_cfg.subsample,
+        colsample_bytree=train_cfg.colsample_bytree,
+        random_state=train_cfg.random_seed,
+        eval_metric="aucpr",
+        tree_method="hist",
+        n_jobs=-1,
+    )
+    print(
+        f"hyperparams from params.yaml: n_estimators={train_cfg.n_estimators} "
+        f"max_depth={train_cfg.max_depth} lr={train_cfg.learning_rate} "
+        f"subsample={train_cfg.subsample} colsample={train_cfg.colsample_bytree} "
+        f"seed={train_cfg.random_seed} scale_pos_weight={spw:.2f}"
     )
     model.fit(train[feats], train["y"])
     prob = model.predict_proba(test[feats])[:, 1]

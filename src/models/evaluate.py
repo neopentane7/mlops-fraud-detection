@@ -27,6 +27,7 @@ from typing import Any, TypeAlias
 import mlflow
 import numpy as np
 import pandas as pd
+from mlflow.exceptions import MlflowException
 from sklearn.metrics import (
     average_precision_score,
     f1_score,
@@ -58,7 +59,7 @@ RUN_INFO_PATH: Path = MODELS_DIR / "run_info.json"
 Model: TypeAlias = Any
 
 # Hard benchmark gate for the holdout/test set, **per active dataset** (from
-# params.yaml). For the fraud profile these are calibrated from 5-seed/5-fold
+# params.yaml). For the fraud profile these are calibrated from 5-fold x 5-seed
 # experiments: roc_auc / avg_precision are threshold-independent and stable,
 # recall is the business priority, and precision is a low "not-collapsed" floor.
 # `BENCHMARK_TARGETS` is imported from config so each dataset gates on its own
@@ -101,20 +102,33 @@ def compute_metrics(
 
 
 def check_benchmarks(metrics: dict[str, float]) -> list[str]:
-    """Return a list of human-readable failures for metrics below target."""
+    """Return a list of human-readable failures for metrics below target.
+
+    A *missing* metric is reported as a failure in words rather than being
+    formatted numerically — ``f"{None:.4f}"`` raises ``TypeError``, which would
+    turn a clear gate failure into a stack trace.
+    """
     failures: list[str] = []
     for name, target in BENCHMARK_TARGETS.items():
         value = metrics.get(name)
-        if value is None or value < target:
+        if value is None:
+            failures.append(f"{name}=<missing from metrics> < target {target:.2f}")
+        elif value < target:
             failures.append(f"{name}={value:.4f} < target {target:.2f}")
     return failures
 
 
-def _resolve_challenger_uri() -> str:
-    """Locate the just-trained model URI via the run-info file or latest run."""
+def _resolve_challenger() -> tuple[str, str | None]:
+    """Locate the just-trained challenger.
+
+    Returns:
+        ``(model_uri, run_id)``. ``run_id`` is ``None`` when the challenger was
+        resolved from the registry rather than the run-info file, in which case
+        holdout metrics cannot be attached back to the originating run.
+    """
     if RUN_INFO_PATH.exists():
-        run_id = json.loads(RUN_INFO_PATH.read_text(encoding="utf-8"))["run_id"]
-        return f"runs:/{run_id}/model"
+        run_id = str(json.loads(RUN_INFO_PATH.read_text(encoding="utf-8"))["run_id"])
+        return f"runs:/{run_id}/model", run_id
     # Fall back to the most recent registered version.
     client = mlflow.tracking.MlflowClient()
     versions = client.search_model_versions(f"name='{REGISTERED_MODEL_NAME}'")
@@ -123,14 +137,44 @@ def _resolve_challenger_uri() -> str:
             "No challenger model found (no run_info.json, no registry versions)."
         )
     latest = max(versions, key=lambda mv: int(mv.version))
-    return f"models:/{REGISTERED_MODEL_NAME}/{latest.version}"
+    return f"models:/{REGISTERED_MODEL_NAME}/{latest.version}", None
+
+
+def _log_holdout_metrics(run_id: str, metrics: dict[str, float]) -> None:
+    """Attach holdout metrics to the challenger's run under a ``holdout_`` prefix.
+
+    Training logs *validation* metrics (``train.py`` scores ``y_val``). Without
+    this, a later champion/challenger comparison would read the champion's
+    validation ``f1_fraud`` and compare it against a challenger's **holdout**
+    ``f1_fraud`` — two different splits. Logging the holdout suite here gives
+    ``promote_model.py`` a like-for-like number to compare.
+    """
+    try:
+        with mlflow.start_run(run_id=run_id):
+            mlflow.log_metrics(
+                {f"holdout_{k}": v for k, v in metrics.items() if k != "threshold"}
+            )
+    except Exception as exc:  # noqa: BLE001 - metric back-annotation is best-effort
+        print(f"[evaluate:holdout] Could not log holdout metrics to run: {exc}")
 
 
 def _load_production_model() -> Model | None:
-    """Load the current Production model, or ``None`` if none is registered."""
+    """Load the current Production model, or ``None`` if none is registered.
+
+    A missing registered model is the normal first-run case. Any *other* failure
+    (registry unreachable, auth) silently disables the regression gate below, so
+    it is reported loudly rather than being indistinguishable from "no champion".
+    """
     try:
         return mlflow.pyfunc.load_model(f"models:/{REGISTERED_MODEL_NAME}/Production")
-    except Exception:  # noqa: BLE001 - registry/model may simply not exist yet
+    except MlflowException as exc:
+        print(f"[evaluate:holdout] No Production champion registered ({exc}).")
+        return None
+    except Exception as exc:  # noqa: BLE001 - never let this abort the stage
+        print(
+            "[evaluate:holdout] WARNING: could not reach the model registry; the "
+            f"challenger-vs-champion gate is being SKIPPED. Cause: {exc}"
+        )
         return None
 
 
@@ -142,15 +186,20 @@ def _score(model: Model, frame: pd.DataFrame, threshold: float) -> dict[str, flo
 
 def _print_comparison(challenger: dict[str, float], champion: dict[str, float]) -> None:
     """Print a challenger-vs-production comparison table to stdout."""
-    cols = ["f1_fraud", "roc_auc", "precision_fraud", "recall_fraud"]
-    header = f"{'Model':<18}" + "".join(f"{c:<14}" for c in cols)
+    cols = ["avg_precision", "roc_auc", "f1_fraud", "precision_fraud", "recall_fraud"]
+    # ASCII only, and wide enough for the longest column name ("precision_fraud",
+    # 15 chars). A box-drawing rule here used to raise UnicodeEncodeError and
+    # abort the whole holdout stage on a cp1252 console (Windows), and a width of
+    # 14 ran the headers together.
+    width = 17
+    header = f"{'Model':<18}" + "".join(f"{c:<{width}}" for c in cols)
     print(header)
-    print("─" * len(header))
+    print("-" * len(header))
     for label, m in (("Challenger", challenger), ("Current Prod", champion)):
-        print(f"{label:<18}" + "".join(f"{m[c]:<14.4f}" for c in cols))
+        print(f"{label:<18}" + "".join(f"{m[c]:<{width}.4f}" for c in cols))
     print(
         f"{'Delta':<18}"
-        + "".join(f"{challenger[c] - champion[c]:<+14.4f}" for c in cols)
+        + "".join(f"{challenger[c] - champion[c]:<+{width}.4f}" for c in cols)
     )
 
 
@@ -174,7 +223,8 @@ def evaluate(stage: str) -> dict[str, float]:
     out_path = TRAIN_METRICS_PATH if stage == "val" else EVAL_METRICS_PATH
 
     frame = pd.read_parquet(data_path)
-    challenger = mlflow.pyfunc.load_model(_resolve_challenger_uri())
+    challenger_uri, challenger_run_id = _resolve_challenger()
+    challenger = mlflow.pyfunc.load_model(challenger_uri)
     metrics = _score(challenger, frame, threshold)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -183,6 +233,11 @@ def evaluate(stage: str) -> dict[str, float]:
 
     if stage != "holdout":
         return metrics
+
+    # Back-annotate the run so downstream champion/challenger comparisons read
+    # holdout numbers on both sides (see :func:`_log_holdout_metrics`).
+    if challenger_run_id:
+        _log_holdout_metrics(challenger_run_id, metrics)
 
     # --- Gate 1: absolute benchmark targets -------------------------------
     failures = check_benchmarks(metrics)
@@ -197,10 +252,19 @@ def evaluate(stage: str) -> dict[str, float]:
     if champion_model is not None:
         champion = _score(champion_model, frame, threshold)
         _print_comparison(metrics, champion)
-        if metrics["f1_fraud"] < champion["f1_fraud"]:
+        # Gate on avg_precision, NOT f1_fraud. Both models are necessarily
+        # scored here at the *challenger's* tuned threshold (a champion's own
+        # threshold is not stored per registry version), so every
+        # threshold-dependent metric — f1, precision, recall — is measured at an
+        # operating point the champion was never calibrated for and is
+        # systematically understated. avg_precision is threshold-independent,
+        # so it compares the two models fairly on the same holdout set. The
+        # threshold-dependent columns are still printed for context.
+        if metrics["avg_precision"] < champion["avg_precision"]:
             print(
-                "[evaluate:holdout] CHALLENGER REGRESSION: "
-                f"f1_fraud {metrics['f1_fraud']:.4f} < prod {champion['f1_fraud']:.4f}"
+                "[evaluate:holdout] CHALLENGER REGRESSION: avg_precision "
+                f"{metrics['avg_precision']:.4f} < prod "
+                f"{champion['avg_precision']:.4f}"
             )
             raise SystemExit(1)
     else:

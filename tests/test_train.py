@@ -42,6 +42,30 @@ def test_isotonic_calibrator_corrects_probabilities() -> None:
     assert abs(out.mean() - y.mean()) < abs(raw.mean() - y.mean())
 
 
+def test_isotonic_is_order_preserving_but_not_strictly() -> None:
+    """Isotonic calibration preserves order but creates ties, so ranking shifts.
+
+    This pins a property the README used to get wrong ("rank-preserving, so
+    ROC-AUC / AUPRC are unchanged"). Isotonic regression is a *step* function:
+    it is monotonic non-decreasing, but it maps whole score intervals onto a
+    single value. Tied pairs count 0.5 in the AUC concordance sum instead of
+    0/1, so rank-based metrics do move. Calibration changes the reported
+    probability; it is not a free no-op on ROC-AUC / AUPRC.
+    """
+    from src.models.predict import apply_calibrator, fit_calibrator
+
+    rng = np.random.default_rng(0)
+    y = rng.integers(0, 2, size=800)
+    raw = np.clip(0.5 + 0.35 * y + rng.normal(0, 0.15, size=800), 0, 1)
+    calibrated = apply_calibrator(fit_calibrator(raw, y, "isotonic"), raw)
+
+    order = np.argsort(raw)
+    steps = np.diff(calibrated[order])
+    assert np.all(steps >= 0), "calibration must be monotonic non-decreasing"
+    assert np.any(steps == 0), "isotonic is a step function: it must create ties"
+    assert len(np.unique(calibrated)) < len(np.unique(raw))
+
+
 def test_cost_threshold_responds_to_asymmetric_costs() -> None:
     """Costly misses -> lower (aggressive) threshold; costly false alarms -> higher."""
     # Overlapping scores so the optimum genuinely depends on the cost ratio.
@@ -50,6 +74,42 @@ def test_cost_threshold_responds_to_asymmetric_costs() -> None:
     t_catch = _cost_optimal_threshold(probs, y, cost_fn=100.0, cost_fp=1.0)
     t_careful = _cost_optimal_threshold(probs, y, cost_fn=1.0, cost_fp=100.0)
     assert t_catch < t_careful
+
+
+def test_cost_threshold_handles_ties_and_degenerate_input() -> None:
+    """The vectorised cost search matches a brute-force scan on awkward inputs.
+
+    The O(n log n) cumulative-sum implementation must agree with the naive
+    "scan every unique score" version it replaced, including heavy ties, all
+    scores identical, and single-class labels.
+    """
+
+    def brute_force(
+        probs: np.ndarray, y: np.ndarray, c_fn: float, c_fp: float
+    ) -> float:
+        best_t, best_cost = 0.5, float("inf")
+        for t in np.unique(probs):
+            pred = probs >= t
+            cost = c_fn * int(((y == 1) & ~pred).sum()) + c_fp * int(
+                ((y != 1) & pred).sum()
+            )
+            if cost < best_cost:
+                best_cost, best_t = cost, float(t)
+        return best_t
+
+    cases = [
+        (np.array([0.1, 0.1, 0.9, 0.9]), np.array([0, 0, 1, 1])),  # ties
+        (np.full(6, 0.5), np.array([0, 1, 0, 1, 0, 1])),  # all identical
+        (np.array([0.2, 0.4, 0.6]), np.array([0, 0, 0])),  # no positives
+        (np.array([0.2, 0.4, 0.6]), np.array([1, 1, 1])),  # all positives
+    ]
+    for probs, y in cases:
+        assert _cost_optimal_threshold(probs, y, 10.0, 1.0) == brute_force(
+            probs, y, 10.0, 1.0
+        )
+
+    # Empty input falls back to the neutral cut-off rather than raising.
+    assert _cost_optimal_threshold(np.array([]), np.array([]), 10.0, 1.0) == 0.5
 
 
 def _tiny_config() -> Config:
