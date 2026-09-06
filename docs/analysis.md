@@ -81,8 +81,8 @@ logged per training run for governance.
 
 ![scale_pos_weight vs AUPRC](images/spw_vs_auprc.png)
 
-A live sweep from 1 → 577 shows AUPRC is essentially flat (~0.82–0.83 across the
-whole range). This disproved the intuition that the naive 577 (= negative/
+A live sweep from 1 → 577 shows AUPRC is essentially flat — measured
+**0.817 to 0.838** across the whole range, a spread of 0.021. This disproved the intuition that the naive 577 (= negative/
 positive ratio) is necessary — it hurts probability calibration without
 improving ranking, so it is tuned down to 24. **The threshold strategy, not
 `scale_pos_weight`, is the primary lever.**
@@ -91,8 +91,14 @@ improving ranking, so it is tuned down to 24. **The threshold strategy, not
 
 ![Single-split variance](images/seed_variance.png)
 
-The same code on five different random splits: precision swings from 0.10 to
-0.90 and recall from 0.79 to 0.87. With so few frauds per split, the
+The same code on five different random splits (seeds 1, 7, 21, 42, 123 — the
+live re-run performed by `generate_figures.py`, which is a different experiment
+from the original tuning study quoted in the README, hence a different spread):
+**precision swings from 0.057 to 0.891** while recall stays in a narrow
+0.789–0.887 band. The seed=7 run collapses to precision 0.057 for the same
+reason the CV study found: the recall floor drags the tuned threshold toward
+zero, so almost everything gets flagged. The model is fine; the operating point
+is not. Only the *stable* metrics should gate. With so few frauds per split, the
 precision/recall operating point is high-variance — which is why the gate uses
 the **stable** metrics (ROC-AUC, AUPRC) plus a recall floor, and why CV-based
 gating is the recommended next step.

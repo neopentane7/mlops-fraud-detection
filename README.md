@@ -87,7 +87,7 @@ demo for hermetic speed — **no reported result is trained on synthetic data.**
 
 | Profile (`MLOPS_DATASET`) | Trained on | Source (exact) | Rows / positives | Imbalance |
 | --- | --- | --- | --- | --- |
-| `creditcard` *(default)* | European-cardholder card transactions, Sept 2013; features `Time`, `Amount`, PCA `V1–V28` | Kaggle `mlg-ulb/creditcardfraud`, else public OpenML mirror `data_id=42175` (no login) | 284,807 → 283,726 dedup / 492 fraud | **578 : 1** |
+| `creditcard` *(default)* | European-cardholder card transactions, Sept 2013; features `Time`, `Amount`, PCA `V1–V28` | Kaggle `mlg-ulb/creditcardfraud`, else public OpenML mirror `data_id=42175` (no login) | 284,807 / 492 fraud → **283,726 / 473** after dedup | **578 : 1** raw, **599 : 1** as trained |
 | `cc-default` | Taiwan credit-card client default (Yeh & Lien 2009); 23 features `x1–x23` | OpenML `data_id=42477` (no login) | 30,000 → 29,965 / 6,636 | **3.5 : 1** |
 | `elliptic` | Real Bitcoin transactions labelled illicit/licit (Weber et al. 2019); 165 node features `f1–f165` | Kaggle `ellipticco/elliptic-data-set` | 46,564 labelled / 4,545 illicit | **9.2 : 1** |
 
@@ -105,13 +105,19 @@ per-dataset gates, figures, and the literature comparison are in
 
 | Metric (positive class) | `creditcard` (fraud) | `cc-default` (default) | `elliptic` (AML) |
 | --- | --- | --- | --- |
-| ROC-AUC | **0.971** | **0.772** | **0.995** |
-| Average precision (AUPRC) | **0.834** | **0.552** | **0.980** |
-| Recall | 0.831 | 0.642 | 0.689 |
-| Precision | 0.678 | 0.434 | 0.998 |
-| F1 | 0.747 | 0.518 | 0.815 |
+| ROC-AUC | **0.969** | **0.772** | **0.995** |
+| Average precision (AUPRC) | **0.826** | **0.552** | **0.981** |
+| Recall | 0.831 | 0.642 | 0.694 |
+| Precision | 0.787 | 0.434 | 0.998 |
+| F1 | 0.808 | 0.518 | 0.818 |
 | Test positives (support) | 71 | 995 | 682 |
 | Own benchmark gate | ✅ passed | ✅ passed | ✅ passed |
+
+**Every** figure above is reproduced by the pipeline and committed as a metrics
+artifact — [creditcard](metrics/creditcard/eval_metrics.json),
+[cc-default](metrics/cc-default/eval_metrics.json),
+[elliptic](metrics/elliptic/eval_metrics.json) — so every number traces to the
+run that produced it.
 
 ![Model performance across all three datasets](docs/images/comparison/metrics_bar.png)
 
@@ -163,10 +169,10 @@ src/data/                download.py (Kaggle/OpenML) · validate.py (Pandera) ·
 src/models/              train.py (MLflow) · evaluate.py (gates) · predict.py (pyfunc wrapper)
 src/monitoring/          detect_drift.py (Evidently)
 api/                     main.py (FastAPI lifespan) · schemas.py · Dockerfile
-scripts/                 promote_model.py · integration_test.py · pre-commit guard
+scripts/                 promote_model.py · cv_evaluate.py (K-fold gating) · integration_test.py
 .github/workflows/       7 workflows: ci · quality · e2e · cd · retrain · monitor · security
 dvc.yaml / params.yaml   5-stage pipeline + all tunable parameters
-tests/                   hermetic pytest suite (synthetic fixture, 82% coverage)
+tests/                   hermetic pytest suite (synthetic fixture, 80% coverage gate)
 ```
 
 ## Multi-dataset (config-driven)
@@ -192,27 +198,39 @@ second-dataset run (it matched the published ROC-AUC ≈ 0.77 ceiling).
 
 ## Model performance — measured on the real data
 
-Targets are **calibrated from 5-seed / 5-fold experiments on the real,
-deduplicated dataset**, not copied from an aspirational spec. `evaluate` fails
+Targets are **calibrated from a 5-fold x 5-seed cross-validation on the real,
+deduplicated dataset** (25 models), not copied from an aspirational spec.
+Reproduce with [scripts/cv_evaluate.py](scripts/cv_evaluate.py); the per-fold
+results are committed as
+[metrics/creditcard/cv_metrics.json](metrics/creditcard/cv_metrics.json). `evaluate` fails
 explicitly, naming the offending metric, if any target is missed. Overall
 accuracy is never reported — it is meaningless at 577:1.
 
 | Metric | Gate | Measured (holdout) | Why this floor |
 | --- | --- | --- | --- |
-| `roc_auc` | ≥ 0.96 | ~0.97 | threshold-independent, stable (0.976 ± 0.01 CV) |
-| `avg_precision` (AUPRC) | ≥ 0.80 | ~0.83 | the right summary under imbalance (0.82 ± 0.02 CV) |
-| `recall_fraud` | ≥ 0.78 | ~0.83 | business priority — catch the fraud |
-| `precision_fraud` | ≥ 0.60 | ~0.68 | "not-collapsed" floor; precision-at-fixed-recall is noisy with ~71 holdout frauds |
+| `roc_auc` | ≥ 0.96 | 0.969 | threshold-independent, stable (**0.981 ± 0.009** over 25 CV folds) |
+| `avg_precision` (AUPRC) | ≥ 0.80 | 0.826 | the right summary under imbalance (**0.851 ± 0.035** over 25 CV folds) |
+| `recall_fraud` | ≥ 0.78 | 0.831 | business priority — catch the fraud |
+| `precision_fraud` | ≥ 0.60 | 0.787 | "not-collapsed" floor; precision-at-fixed-recall is noisy with ~71 holdout frauds |
 
 ### Empirical findings
 
-* **Generalization is strong on the stable metrics**: ROC-AUC 0.976 ± 0.01 and
-  AUPRC 0.82 ± 0.02 across folds — consistent with published results.
+* **Generalization is strong on the stable metrics**: ROC-AUC **0.981 ± 0.009**
+  and AUPRC **0.851 ± 0.035** across 25 folds — consistent with published results.
 * **The original "precision ≥ 0.82 *and* recall ≥ 0.78 simultaneously" goal is
   not reliably achievable on a single split.** With only ~71–95 frauds per
-  evaluation fold and a steep PR curve, the operating point is high-variance
-  (precision swung 0.77–0.98, recall 0.68–0.86 across seeds). This is intrinsic
-  to the data's extreme rarity — not a code defect.
+  evaluation fold and a steep PR curve, the operating point is high-variance.
+  Across the 25 CV folds precision spans **0.109 to 0.973** (std 0.228) while
+  ROC-AUC spans 0.958 to 0.994 (std 0.009) — a **26x** difference in spread.
+  The five-split study behind [analysis.md](docs/analysis.md) reproduces this
+  independently (precision 0.057–0.891, recall 0.789–0.887). It is intrinsic to
+  the data's extreme rarity — not a code defect.
+* **Single-split gating would be flaky: 13 of 25 folds (52%) miss at least one
+  benchmark target, while the fold *mean* clears every one of them.** The worst
+  fold scored ROC-AUC 0.984 and AUPRC 0.888 — a perfectly good model — yet
+  precision 0.109, because its tuned threshold collapsed to 0.003 and flagged
+  almost everything. The failure is in the *operating point*, not model quality,
+  which is exactly why the gate leans on threshold-independent metrics.
 * **What changed because of that**: recall-first thresholding, exact-duplicate
   removal before splitting (~1k dupes that otherwise leak train→test), and
   CV-tuned hyperparameters (depth-4 / 400 trees / `scale_pos_weight=24`), plus
@@ -282,9 +300,13 @@ unless noted.
   reviewers" in repository settings).
 * **retrain.yml** (manual / drift dispatch) — retrains a challenger, evaluates it,
   and promotes only when it beats the Production model's `f1_fraud` by ≥ 2%.
-* **monitor.yml** (weekly cron / manual) — builds a reference baseline and an
-  Evidently drift report; the cron performs real detection and dispatches
-  `retrain` only when the drift share exceeds the threshold.
+* **monitor.yml** (weekly cron / manual) — builds a reference baseline and runs
+  a real Evidently comparison, dispatching `retrain` only when the drift share
+  exceeds the threshold. Note the *inputs* are synthetic: the reference and the
+  "current traffic" are both drawn from the `e2e` profile, so the scheduled run
+  exercises the detector and the dispatch wiring, not live traffic. Scoring real
+  traffic would need the API to persist features; it deliberately logs only a
+  SHA-256 hash of each payload (see Limitations).
 * **security.yml** (push/PR/weekly) — pip-audit, CodeQL, and Trivy. Dependency and
   filesystem scans report without blocking; CodeQL results upload to the Security
   tab.
@@ -305,13 +327,14 @@ uv pip compile --python-platform linux --python-version 3.11 --extra api -o requ
 
 ## Testing
 
-A hermetic test suite with an 80% coverage gate, ruff-clean. It uses a synthetic
+A hermetic test suite with an 80% coverage gate over **both** `src/` and `api/`,
+ruff-clean. It uses a synthetic
 fixture, so it requires no Kaggle credentials, network, or tracking server, while
 still exercising the full code paths (validation, preprocessing, XGBoost
 training, MLflow logging, the pyfunc wrapper, the async API, and drift logic).
 
 ```powershell
-pytest tests/ -v --cov=src --cov-fail-under=80
+pytest tests/ -v --cov=src --cov=api --cov-fail-under=80
 ruff check src/ tests/ api/
 ```
 
@@ -319,22 +342,35 @@ ruff check src/ tests/ api/
 
 * **Split strategy** (`preprocess.split_strategy`): default `stratified` (random,
   comparable to the published random-split benchmarks). An opt-in `temporal` mode
-  trains on the oldest transactions and tests on the newest — a stricter,
-  no-leakage evaluation that better reflects production; on `creditcard` it is
-  ~0.07 lower AUPRC — the cost of evaluating on future data. Falls back to
-  stratified when the profile has no time column (cc-default).
+  trains on the oldest transactions and tests on the newest — a stricter
+  evaluation that better reflects production. Measured on `creditcard`: AUPRC
+  drops 0.826 -> 0.773 and the fraud rate itself drifts across the window
+  (0.00184 train -> 0.00122 test), leaving only 52 test positives instead of 71.
+  **At that operating point the run does not clear the benchmark gate**
+  (recall 0.750 < 0.78, precision 0.488 < 0.60), so switching this on means
+  retuning the gate to temporal-appropriate targets — the honest cost of
+  evaluating on future data. Falls back to stratified when the profile has no
+  time column (cc-default).
 * **Decision threshold** is tuned on validation, not left at 0.5. Two strategies
   (`train.threshold_strategy`): `recall` (highest precision above a recall floor)
   or `cost` (minimise `cost_fn*FN + cost_fp*FP` — fraud's asymmetric error costs).
-* **Probability calibration** (`train.calibration: isotonic`): an isotonic map
-  fit on validation corrects the scores `scale_pos_weight` distorts, bundled into
-  the serving model so `/predict` returns a trustworthy probability. Rank-
-  preserving, so ROC-AUC / AUPRC are unchanged.
+* **Probability calibration** (`train.calibration`) — **available, defaults to
+  `none`.** Setting it to `isotonic` fits an isotonic map on validation to
+  correct the scores `scale_pos_weight` distorts and bundles it into the serving
+  model, so `/predict` returns a calibrated probability. It is *order*-preserving
+  but **not strictly** so: isotonic regression is a step function, and on this
+  data it collapses 42,149 distinct validation scores into 1,462 levels. Those
+  ties shift rank-based metrics slightly (measured: ROC-AUC 0.9794 -> 0.9856,
+  AUPRC 0.8720 -> 0.8716), so treat calibration as changing the *reported
+  probability*, not as a free no-op on the ranking metrics. The published metrics
+  below were produced with calibration **off**, the shipped default.
 
 ## Limitations & future work
 
-* **Single-split benchmark gating is noisy** at this fraud count — the most
-  robust next step is **K-fold CV-based gating** (gate on the mean across folds).
+* **Single-split benchmark gating is noisy** at this fraud count — measured at a
+  52% per-fold failure rate. [scripts/cv_evaluate.py](scripts/cv_evaluate.py)
+  implements CV-based gating (`--gate` fails on the fold mean); wiring it into CI
+  in place of the single-split gate is the remaining step.
 * Features arrive pre-PCA'd, which limits how narratable SHAP explanations are.
 * No online feature store — serving recomputes from the request payload only.
 

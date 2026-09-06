@@ -16,17 +16,17 @@ illicit class, threshold 0.5).
 
 | Metric (illicit class) | XGBoost — random split | XGBoost — **temporal** (paper protocol) | Paper **RF** (AF) |
 | --- | --- | --- | --- |
-| ROC-AUC | 0.995 | **0.940** | — |
-| AUPRC | 0.980 | **0.803** | — |
-| Precision | 0.998\* | **0.768** | 0.956 |
-| Recall | 0.689\* | **0.738** | 0.670 |
-| F1 | 0.815\* | **0.753** | **0.787** |
+| ROC-AUC | 0.995 | **0.936** | — |
+| AUPRC | 0.981 | **0.803** | — |
+| Precision | 0.998\* | **0.766** | 0.956 |
+| Recall | 0.694\* | **0.737** | 0.670 |
+| F1 | 0.818\* | **0.751** | **0.787** |
 
 \* the random-split run uses a recall-first threshold (0.996); temporal and the
 paper use 0.5, so the last two columns are directly comparable.
 
-**On the paper's protocol the F1 is 0.753 — below both the paper's RF (0.787) and
-the optimistic random-split 0.815.** The random split inflates F1 by ~0.06 and
+**On the paper's protocol the F1 is 0.751 — below both the paper's RF (0.787) and
+the optimistic random-split 0.818.** The random split inflates F1 by ~0.06 and
 AUPRC by ~0.18, because shuffling lets the model see every time period (and the
 aggregated neighbour features leak structure across the split). On equal footing
 the XGBoost model sits in the same band as the paper's strongest classical
@@ -38,12 +38,12 @@ Per-time-step recall on the temporal **test** period (threshold 0.5):
 
 | Period | Time steps | Recall | Behaviour |
 | --- | --- | --- | --- |
-| Pre-shutdown | 35–42 | **0.66 – 1.00** | works well |
+| Pre-shutdown | 35–42 | **0.65 – 1.00** | works well |
 | Post-shutdown | 43–49 | **≈ 0.00** (0.00, 0.08, 0.00, 0.50†, 0.00, 0.00, 0.02) | effectively blind |
 
 †step 46 has only 2 illicit nodes. From **step 43 onward the model catches almost
 no illicit transactions** — the marketplace shutdown changed the data distribution
-and the pre-shutdown model does not transfer. The aggregate F1 (0.75) *hides*
+and the pre-shutdown model does not transfer. The aggregate F1 (0.751) *hides*
 this because the earlier, well-classified steps dominate the count.
 
 ## Why this matters
@@ -69,3 +69,6 @@ this because the earlier, well-classified steps dominate the count.
 ```bash
 python scripts/elliptic_temporal_eval.py   # needs Kaggle creds + xgboost
 ```
+
+All figures on this page were regenerated from that command; the per-step recall
+column below reproduced exactly, including the step-46 artefact.

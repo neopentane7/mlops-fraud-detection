@@ -10,8 +10,8 @@ split (stratified, for cross-dataset comparability).
 | Source | Kaggle `mlg-ulb/creditcardfraud` / OpenML 42175 | OpenML 42477 (Yeh & Lien 2009) | Kaggle `ellipticco/elliptic-data-set` |
 | Rows (usable) | 284,807 → 283,726 dedup | 30,000 → 29,965 | 46,564 labelled nodes |
 | Features | 30 (`Time`,`Amount`,`V1..V28`, PCA) | 23 (`x1..x23`) | 165 (`f1..f165`, anonymised) |
-| Positives | 492 | 6,636 | 4,545 |
-| Imbalance | **578 : 1** (0.17%) | **3.5 : 1** (22.1%) | **9.2 : 1** (9.76%) |
+| Positives | 492 raw → **473** after dedup | 6,636 | 4,545 |
+| Imbalance | **578 : 1** raw / **599 : 1** as trained (0.17%) | **3.5 : 1** (22.1%) | **9.2 : 1** (9.76%) |
 | Task | detect fraudulent transactions | predict next-month default | detect illicit BTC transactions |
 
 ## Configuration used (per dataset)
@@ -21,7 +21,7 @@ split (stratified, for cross-dataset comparability).
 | n_estimators / max_depth / lr | 400 / 4 / 0.05 | 400 / 4 / 0.05 | 400 / 4 / 0.05 |
 | `scale_pos_weight` | 24 (tuned) | 3.52 (auto) | 9.2 (auto) |
 | `min_recall` (threshold floor) | 0.85 | 0.65 | 0.65 |
-| chosen decision threshold | 0.130 | 0.472 | 0.996 |
+| chosen decision threshold | 0.170 | 0.472 | 0.996 |
 
 Same code; only the `params.yaml` profile differs.
 
@@ -29,11 +29,11 @@ Same code; only the `params.yaml` profile differs.
 
 | Metric | `creditcard` | `cc-default` | `elliptic` |
 | --- | --- | --- | --- |
-| ROC-AUC | **0.971** | **0.772** | **0.995** |
-| Average precision (AUPRC) | **0.834** | **0.552** | **0.980** |
-| Recall (positive) | 0.831 | 0.642 | 0.689 |
-| Precision (positive) | 0.678 | 0.434 | 0.998 |
-| F1 (positive) | 0.747 | 0.518 | 0.815 |
+| ROC-AUC | **0.969** | **0.772** | **0.995** |
+| Average precision (AUPRC) | **0.826** | **0.552** | **0.981** |
+| Recall (positive) | 0.831 | 0.642 | 0.694 |
+| Precision (positive) | 0.787 | 0.434 | 0.998 |
+| F1 (positive) | 0.808 | 0.518 | 0.818 |
 | Test positives (support) | 71 | 995 | 682 |
 
 > ⚠️ **`elliptic` is graph data evaluated tabularly on a random split** — that's
@@ -67,10 +67,10 @@ All three **passed their own gate** (`evaluate --stage holdout` exited 0):
 
 | Metric | `creditcard` | `cc-default` | `elliptic` |
 | --- | --- | --- | --- |
-| roc_auc | ≥ 0.96 / 0.971 ✅ | ≥ 0.74 / 0.772 ✅ | ≥ 0.95 / 0.995 ✅ |
-| avg_precision | ≥ 0.80 / 0.834 ✅ | ≥ 0.50 / 0.552 ✅ | ≥ 0.90 / 0.980 ✅ |
-| recall | ≥ 0.78 / 0.831 ✅ | ≥ 0.55 / 0.642 ✅ | ≥ 0.60 / 0.689 ✅ |
-| precision | ≥ 0.60 / 0.678 ✅ | ≥ 0.30 / 0.434 ✅ | ≥ 0.80 / 0.998 ✅ |
+| roc_auc | ≥ 0.96 / 0.969 ✅ | ≥ 0.74 / 0.772 ✅ | ≥ 0.95 / 0.995 ✅ |
+| avg_precision | ≥ 0.80 / 0.826 ✅ | ≥ 0.50 / 0.552 ✅ | ≥ 0.90 / 0.981 ✅ |
+| recall | ≥ 0.78 / 0.831 ✅ | ≥ 0.55 / 0.642 ✅ | ≥ 0.60 / 0.694 ✅ |
+| precision | ≥ 0.60 / 0.787 ✅ | ≥ 0.30 / 0.434 ✅ | ≥ 0.80 / 0.998 ✅ |
 
 ## Vs published literature (sanity check)
 
@@ -78,9 +78,9 @@ Threshold-independent metrics (ROC-AUC, AUPRC) land on each dataset's ceiling:
 
 | | Measured ROC-AUC / AUPRC | Published (GBM) |
 | --- | --- | --- |
-| `creditcard` | 0.971 / 0.834 | ~0.97–0.98 / ~0.85 |
+| `creditcard` | 0.969 / 0.826 | ~0.97–0.98 / ~0.85 |
 | `cc-default` | 0.772 / 0.552 | ~0.77–0.78 / ~0.54–0.56 |
-| `elliptic` (random) | 0.995 / 0.980 | RF F1 0.787 (paper, *temporal*) |
+| `elliptic` (random) | 0.995 / 0.981 | RF F1 0.787 (paper, *temporal*) |
 
 For `elliptic` the like-for-like comparison is the **temporal** split: temporal
 F1 **0.753** vs the paper's RF **0.787** — see
@@ -89,7 +89,12 @@ not directly comparable to the paper.
 
 ## Stability & how to read the gaps
 
-- `creditcard` 5-fold/5-seed: ROC-AUC **0.976 ± 0.01**, AUPRC **0.82 ± 0.02**.
+- `creditcard` 5-fold x 5-seed (25 models, [cv_metrics.json](../metrics/creditcard/cv_metrics.json)):
+  ROC-AUC **0.981 ± 0.009**, AUPRC **0.851 ± 0.035**. Precision spans 0.109-0.973
+  (std 0.228) — 26x the ROC-AUC spread. **13 of the 25 folds (52%) miss at least
+  one benchmark target while the fold mean clears them all**, which is the
+  measured case for CV-based gating. Each seed varies both the partition and the
+  model's RNG, so this is the spread a genuine re-run would see.
   The precision/recall operating point is high-variance at 578:1 (~71 holdout
   frauds), so the gate uses the stable metrics plus a recall floor.
 - `cc-default` scores lower because **default prediction is a harder, lower-
@@ -97,6 +102,20 @@ not directly comparable to the paper.
 - `elliptic` scores high on a random split but **fails to generalise across the
   dark-market-shutdown concept drift** under temporal evaluation — the textbook
   argument for the drift-monitoring + retraining loop this project ships.
+- **Rarity, not the pipeline, drives operating-point instability.** The same
+  25-model cross-validation run on both datasets
+  ([creditcard](../metrics/creditcard/cv_metrics.json),
+  [elliptic](../metrics/elliptic/cv_metrics.json)) separates the two cleanly:
+
+  | | imbalance | folds missing a target | precision std | precision range |
+  | --- | --- | --- | --- | --- |
+  | `creditcard` | 599 : 1 | **13 / 25 (52%)** | 0.2277 | 0.109 – 0.973 |
+  | `elliptic` | 9.2 : 1 | **0 / 25 (0%)** | 0.0022 | 0.991 – 1.000 |
+
+  Identical code and identical thresholding policy; precision is **103x** more
+  variable at 599:1 than at 9.2:1. Single-split gating is unreliable *because of
+  class rarity*, not because of the pipeline — which is why the creditcard gate
+  leans on threshold-independent metrics and why CV gating matters most there.
 
 Accuracy is deliberately never used (meaningless at imbalance).
 

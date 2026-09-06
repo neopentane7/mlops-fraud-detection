@@ -37,8 +37,8 @@ all are documented here. Metrics are measured on held-out **test** splits — se
 | --- | --- | --- | --- |
 | Source | Kaggle `mlg-ulb/creditcardfraud` / OpenML 42175 | OpenML 42477 (Yeh & Lien 2009) | Kaggle `ellipticco/elliptic-data-set` |
 | Rows | 284,807 → 283,726 dedup | 30,000 → 29,965 | 46,564 labelled nodes |
-| Positives | 492 | 6,636 | 4,545 |
-| Imbalance | 578 : 1 (0.17%) | 3.5 : 1 (22.1%) | 9.2 : 1 (9.76%) |
+| Positives | 492 raw → **473** after dedup | 6,636 | 4,545 |
+| Imbalance | 578 : 1 raw / 599 : 1 as trained (0.17%) | 3.5 : 1 (22.1%) | 9.2 : 1 (9.76%) |
 | Split | stratified 70/15/15 (temporal available where a time column exists) |||
 
 The creditcard and elliptic features are anonymised (PCA / undisclosed node
@@ -52,15 +52,16 @@ point.
 
 | Metric | `creditcard` | `cc-default` | `elliptic` |
 | --- | --- | --- | --- |
-| ROC-AUC | 0.971 | 0.772 | 0.995 |
-| Average precision (AUPRC) | 0.834 | 0.552 | 0.980 |
-| Recall (positive) | 0.831 | 0.642 | 0.689 |
-| Precision (positive) | 0.678 | 0.434 | 0.998 |
-| F1 (positive) | 0.747 | 0.518 | 0.815 |
+| ROC-AUC | 0.969 | 0.772 | 0.995 |
+| Average precision (AUPRC) | 0.826 | 0.552 | 0.981 |
+| Recall (positive) | 0.831 | 0.642 | 0.694 |
+| Precision (positive) | 0.787 | 0.434 | 0.998 |
+| F1 (positive) | 0.808 | 0.518 | 0.818 |
 
 These match published GBM baselines (creditcard ≈ 0.97 ROC / 0.85 AUPRC;
-cc-default ≈ 0.77 ROC / 0.55 AUPRC). 5-fold/5-seed stability on creditcard:
-ROC-AUC 0.976 ± 0.01, AUPRC 0.82 ± 0.02. **`elliptic`'s random-split numbers are
+cc-default ≈ 0.77 ROC / 0.55 AUPRC). 5-fold x 5-seed stability on creditcard
+(25 models): ROC-AUC 0.981 ± 0.009, AUPRC 0.851 ± 0.035; precision spans
+0.109-0.973, so the operating point is far less stable than the ranking. **`elliptic`'s random-split numbers are
 optimistic** — on the dataset paper's temporal split, F1 drops to ~0.75 (≈ the
 paper's RF) with a concept-drift collapse; see
 [elliptic_analysis.md](elliptic_analysis.md).
@@ -85,6 +86,7 @@ paper's RF) with a concept-drift collapse; see
 - Raw XGBoost scores are skewed by `scale_pos_weight`; **optional isotonic
   calibration** (`train.calibration: isotonic`) corrects them and is bundled into
   the serving model, but defaults off. Benchmark gating is single-split and noisy
-  at low positive counts — K-fold CV gating is the recommended next step.
+  at low positive counts: 13 of 25 CV folds miss a target that the fold mean
+  clears. `scripts/cv_evaluate.py --gate` gates on the mean instead.
 - The serving image bundles the fitted scaler + threshold and loads the model
   from the registry, keeping training/serving feature handling identical.
